@@ -26,5 +26,10 @@ def lambda_handler(event, context):
         }
 
         # 3. Write to DB
+        item = {
+            "OrderId": str(uuid.uuid4()),
+            "Product": payload.get("product", "Unknown"),
+            "Quantity": payload.get("quantity", 1),
+        }
         table.put_item(Item=item)
         print(f"Order processed: {item}")
