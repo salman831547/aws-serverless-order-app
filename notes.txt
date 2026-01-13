@@ -195,7 +195,8 @@ If that happens, you have two choices:
 
 For now, the Python fix above solves 90% of basic connectivity issues!
 
------------------------------
+----------remove cached files in git-------------------
+git rm -r --cached .
 
 api_url = "https://1tey439377.execute-api.us-east-1.amazonaws.com/prod/order"
 website_url = "serverless-frontend-20260113002820771100000001.s3-website-us-east-1.amazonaws.com"
