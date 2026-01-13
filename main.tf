@@ -171,7 +171,7 @@ resource "aws_api_gateway_integration" "options" {
   }
 }
 
-# 3. Define the Response (200 OK)
+# 3. Define the Response (200 OK)---------
 resource "aws_api_gateway_method_response" "options_200" {
   rest_api_id = aws_api_gateway_rest_api.order_api.id
   resource_id = aws_api_gateway_resource.order_resource.id
