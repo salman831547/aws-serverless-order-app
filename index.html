@@ -1,15 +1,82 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Serverless Order System</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+        .input-group { margin-bottom: 1rem; }
+        label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
+        input { padding: 0.5rem; width: 100%; box-sizing: border-box; }
+        button { padding: 0.7rem 1.5rem; background-color: #007bff; color: white; border: none; cursor: pointer; font-size: 1rem; }
+        button:hover { background-color: #0056b3; }
+        #status { margin-top: 1rem; padding: 1rem; display: none; }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    </style>
+</head>
 <body>
-    <h1>Order System</h1>
+    <h1>Place an Order</h1>
+    
+    <div class="input-group">
+        <label for="product">Product Name:</label>
+        <input type="text" id="product" placeholder="e.g., Wireless Headphones">
+    </div>
+
+    <div class="input-group">
+        <label for="quantity">Quantity:</label>
+        <input type="number" id="quantity" value="1" min="1">
+    </div>
+
     <button onclick="order()">Buy Now</button>
+    <div id="status"></div>
+
     <script>
+        // REPLACE THIS WITH YOUR ACTUAL TERRAFORM OUTPUT URL
+        const API_URL = 'https://rplpsmjlf5.execute-api.us-east-1.amazonaws.com/prod/order'; 
+
         async function order() {
-            const res = await fetch('https://1tey439377.execute-api.us-east-1.amazonaws.com/prod/order', {
-                method: 'POST',
-                body: JSON.stringify({ product: "Laptop", quantity: 1 })
-            });
-            alert(await res.text());
+            const product = document.getElementById('product').value;
+            const quantity = document.getElementById('quantity').value;
+            const statusDiv = document.getElementById('status');
+
+            // Basic Validation
+            if (!product) {
+                alert("Please enter a product name");
+                return;
+            }
+
+            statusDiv.style.display = 'block';
+            statusDiv.className = ''; 
+            statusDiv.innerText = 'Processing...';
+
+            try {
+                const res = await fetch(API_URL, {
+                    method: 'POST',
+                    // We don't strictly need headers if the backend is permissive, 
+                    // but this is best practice.
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ 
+                        product: product, 
+                        quantity: parseInt(quantity) 
+                    })
+                });
+
+                const text = await res.text();
+                
+                if (res.ok) {
+                    statusDiv.className = 'success';
+                    statusDiv.innerText = `Success: ${JSON.parse(text)}`;
+                } else {
+                    statusDiv.className = 'error';
+                    statusDiv.innerText = `Error: ${text}`;
+                }
+            } catch (err) {
+                console.error(err);
+                statusDiv.className = 'error';
+                statusDiv.innerText = `Network Error: ${err.message}`;
+            }
         }
     </script>
 </body>
