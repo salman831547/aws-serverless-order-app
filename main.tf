@@ -4,9 +4,9 @@ provider "aws" {
 
 # --- 1. DynamoDB Table ---
 resource "aws_dynamodb_table" "orders_table" {
-  name           = "OrdersTable"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "OrderId"
+  name         = "OrdersTable"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "OrderId"
 
   attribute {
     name = "OrderId"
@@ -71,24 +71,24 @@ data "archive_file" "consumer_zip" {
 }
 
 resource "aws_lambda_function" "producer" {
-  filename      = "producer.zip"
-  function_name = "OrderProducer"
-  role          = aws_iam_role.producer_role.arn
-  handler       = "producer.lambda_handler"
-  runtime       = "python3.9"
+  filename         = "producer.zip"
+  function_name    = "OrderProducer"
+  role             = aws_iam_role.producer_role.arn
+  handler          = "producer.lambda_handler"
+  runtime          = "python3.9"
   source_code_hash = data.archive_file.producer_zip.output_base64sha256
-  
+
   environment {
     variables = { SQS_QUEUE_URL = aws_sqs_queue.order_queue.id }
   }
 }
 
 resource "aws_lambda_function" "consumer" {
-  filename      = "consumer.zip"
-  function_name = "OrderConsumer"
-  role          = aws_iam_role.consumer_role.arn
-  handler       = "consumer.lambda_handler"
-  runtime       = "python3.9"
+  filename         = "consumer.zip"
+  function_name    = "OrderConsumer"
+  role             = aws_iam_role.consumer_role.arn
+  handler          = "consumer.lambda_handler"
+  runtime          = "python3.9"
   source_code_hash = data.archive_file.consumer_zip.output_base64sha256
 
   environment {
@@ -140,7 +140,7 @@ resource "aws_lambda_permission" "apigw" {
 
 # 1. The Deployment (Snapshot of the API)
 resource "aws_api_gateway_deployment" "api_deployment" {
-  depends_on = [aws_api_gateway_integration.lambda_integration]
+  depends_on  = [aws_api_gateway_integration.lambda_integration]
   rest_api_id = aws_api_gateway_rest_api.order_api.id
 
   # Redeploy when the API definition changes
@@ -176,7 +176,7 @@ resource "aws_s3_bucket_website_configuration" "frontend_config" {
 }
 
 resource "aws_s3_bucket_public_access_block" "public_access" {
-  bucket = aws_s3_bucket.frontend_bucket.id
+  bucket                  = aws_s3_bucket.frontend_bucket.id
   block_public_acls       = false
   block_public_policy     = false
   ignore_public_acls      = false
@@ -184,12 +184,12 @@ resource "aws_s3_bucket_public_access_block" "public_access" {
 }
 
 resource "aws_s3_bucket_policy" "public_read" {
-  bucket = aws_s3_bucket.frontend_bucket.id
+  bucket     = aws_s3_bucket.frontend_bucket.id
   depends_on = [aws_s3_bucket_public_access_block.public_access]
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [{
-      Effect = "Allow", Principal = "*", Action = "s3:GetObject",
+      Effect   = "Allow", Principal = "*", Action = "s3:GetObject",
       Resource = "${aws_s3_bucket.frontend_bucket.arn}/*"
     }]
   })
