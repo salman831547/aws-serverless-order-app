@@ -1,0 +1,36 @@
+name: Terraform Check
+
+# Trigger this action only on Pull Requests to the main branch
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Check out your code onto the runner
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 2. Install Terraform on the runner
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0 # Use your specific version if known
+
+      # 3. Initialize Terraform (Download providers only, skip backend)
+      # We skip backend to avoid needing AWS credentials just for validation
+      - name: Terraform Init
+        run: terraform init -backend=false
+
+      # 4. Check formatting (Optional but recommended)
+      # This fails if your code isn't neatly formatted
+      - name: Terraform Format
+        run: terraform fmt -check
+
+      # 5. Validate syntax and configuration
+      - name: Terraform Validate
+        run: terraform validate
+
