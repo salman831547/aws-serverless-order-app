@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <h1>Order System</h1>
+    <button onclick="order()">Buy Now</button>
+    <script>
+        async function order() {
+            const res = await fetch('https://1tey439377.execute-api.us-east-1.amazonaws.com/prod/order', {
+                method: 'POST',
+                body: JSON.stringify({ product: "Laptop", quantity: 1 })
+            });
+            alert(await res.text());
+        }
+    </script>
+</body>
+</html>
