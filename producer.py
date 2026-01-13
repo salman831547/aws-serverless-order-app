@@ -18,7 +18,23 @@ def lambda_handler(event, context):
         
         return {
             'statusCode': 200,
+            # --- CORS HEADERS START ---
+            'headers': {
+                'Access-Control-Allow-Origin': '*', # Allows any domain to read the response
+                'Access-Control-Allow-Headers': 'Content-Type',
+                'Access-Control-Allow-Methods': 'OPTIONS,POST,GET'
+            },
+            # --- CORS HEADERS END ---
             'body': json.dumps('Order placed successfully!')
         }
     except Exception as e:
-        return {'statusCode': 500, 'body': str(e)}
+        return {
+            'statusCode': 500,
+            # Add headers here too in case of error!
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type',
+                'Access-Control-Allow-Methods': 'OPTIONS,POST,GET'
+            },
+            'body': str(e)
+        }
