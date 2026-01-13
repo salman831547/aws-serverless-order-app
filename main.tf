@@ -261,7 +261,7 @@ resource "aws_s3_bucket_policy" "public_read" {
   })
 }
 
-# --- Outputs ---
+# --- Outputs --- ------------
 
 output "api_url" { value = "${aws_api_gateway_stage.prod_stage.invoke_url}/order" }
 
