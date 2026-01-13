@@ -199,5 +199,195 @@ For now, the Python fix above solves 90% of basic connectivity issues!
 git rm -r --cached .
 git config --global push.autoSetupRemote true
 
-api_url = "https://1tey439377.execute-api.us-east-1.amazonaws.com/prod/order"
-website_url = "serverless-frontend-20260113002820771100000001.s3-website-us-east-1.amazonaws.com"
+
+-------- add code formatter on CTRL + S for different languages---------------
+
+The settings.json Method (Most Precise)
+This method ensures that Terraform files are always formatted by the correct tool, even if you use a different formatter for Python or JavaScript.
+
+Press Ctrl + Shift + P.
+
+Type "Open User Settings (JSON)" and select it.
+
+Add (or update) these lines inside the curly braces { ... }:
+
+Here is the updated `settings.json` file.
+
+I have added the standard, industry-preferred formatters for each language you requested.
+
+### The Complete `settings.json`
+
+You can overwrite your current file with this content:
+
+```json
+{
+    "explorer.confirmDelete": false,
+    "explorer.confirmDragAndDrop": false,
+    "security.workspace.trust.untrustedFiles": "open",
+    "python.defaultInterpreterPath": "/bin/python3",
+    "aws.cloudformation.telemetry.enabled": false,
+    "gitlens.ai.model": "vscode",
+    "gitlens.ai.vscode.model": "copilot:gpt-4.1",
+    "[terraform]": {
+        "editor.defaultFormatter": "hashicorp.terraform",
+        "editor.formatOnSave": true,
+        "editor.formatOnSaveMode": "file"
+    },
+    "[terraform-vars]": {
+        "editor.defaultFormatter": "hashicorp.terraform",
+        "editor.formatOnSave": true,
+        "editor.formatOnSaveMode": "file"
+    },
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnSave": true
+    },
+    "[javascript]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true
+    },
+    "[typescript]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true
+    },
+    "[java]": {
+        "editor.defaultFormatter": "redhat.java",
+        "editor.formatOnSave": true
+    },
+    "[scala]": {
+        "editor.defaultFormatter": "scalameta.metals",
+        "editor.formatOnSave": true
+    },
+    "[sql]": {
+        "editor.defaultFormatter": "mtxr.sqltools",
+        "editor.formatOnSave": true
+    }
+}
+
+```
+
+### ⚠️ Important: Install the Extensions
+
+For these settings to work, you must have the corresponding extensions installed in VS Code. If you don't have them, the "Format on Save" feature will fail silently.
+
+* **Python:** Install **Black Formatter** (ID: `ms-python.black-formatter`).
+* **JS / TS:** Install **Prettier - Code formatter** (ID: `esbenp.prettier-vscode`).
+* **Java:** Install **Language Support for Java(TM) by Red Hat** (ID: `redhat.java`).
+* **Scala:** Install **Metals** (ID: `scalameta.metals`).
+* **SQL:** Install **SQLTools** (ID: `mtxr.sqltools`).
+
+**Would you like a command to list all your currently installed extensions to check what you are missing?**
+
+------- add github action code validation on github UI to run before pull request--------------------
+
+Here is how to set up a GitHub Action that automatically checks your Terraform code whenever you open a Pull Request.
+
+This will act as a "sanity check" to ensure you haven't made any syntax errors before merging.
+
+### 1. Create the Directory Structure
+
+GitHub Actions must live in a specific folder structure. Run this command from your repository root:
+
+```bash
+mkdir -p .github/workflows
+
+```
+
+### 2. Create the Workflow File
+
+Create a new file named `.github/workflows/terraform-check.yml` and paste the following content into it:
+
+```yaml
+name: Terraform Check
+
+# Trigger this action only on Pull Requests to the main branch
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Check out your code onto the runner
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 2. Install Terraform on the runner
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0 # Use your specific version if known
+
+      # 3. Initialize Terraform (Download providers only, skip backend)
+      # We skip backend to avoid needing AWS credentials just for validation
+      - name: Terraform Init
+        run: terraform init -backend=false
+
+      # 4. Check formatting (Optional but recommended)
+      # This fails if your code isn't neatly formatted
+      - name: Terraform Format
+        run: terraform fmt -check
+
+      # 5. Validate syntax and configuration
+      - name: Terraform Validate
+        run: terraform validate
+
+```
+
+### 3. Commit and Push
+
+Now, add this file to your repository and push it.
+
+```bash
+git add .github/workflows/terraform-check.yml
+git commit -m "Add Terraform validation CI"
+git push origin feature/your-current-branch
+
+```
+
+### How to see it in action
+
+1. Go to your Pull Request page on GitHub.
+2. You will now see a new section at the bottom of the PR status: **"Checks / Terraform Check (validate)"**.
+3. It will turn **Green** if your code is valid, or **Red** if there is a syntax error.
+
+### Why use `terraform init -backend=false`?
+
+This is a pro tip. Normally, `terraform init` tries to connect to your remote state (S3 bucket). That would require giving GitHub your AWS keys.
+By adding `-backend=false`, we tell Terraform: *"Just download the provider plugins so we can check the syntax; don't try to connect to the actual AWS state."* This keeps this specific check fast and secure.
+
+**Would you like to try intentionally breaking your `main.tf` (e.g., removing a closing brace `}`) to see the Red failure status in your PR?**
+
+--------- install vs code extensions----------------
+
+Here is the command to list all extensions you currently have installed:```bash
+code --list-extensions
+
+```
+
+### Quick Install Command
+
+To save you time searching for each one manually, you can copy and paste this single block into your terminal. It will install all the recommended formatters (if you don't already have them):
+
+```bash
+# Python (Black)
+code --install-extension ms-python.black-formatter
+
+# JavaScript / TypeScript (Prettier)
+code --install-extension esbenp.prettier-vscode
+
+# Java (Red Hat)
+code --install-extension redhat.java
+
+# Scala (Metals)
+code --install-extension scalameta.metals
+
+# SQL (SQLTools)
+code --install-extension mtxr.sqltools
+
+```
+
+**Would you like to customize the specific settings for any of these (e.g., set the Python line length to 120 instead of the default 88)?**
+
