@@ -1,0 +1,193 @@
+This is the final piece of the puzzle for a production-grade frontend. We are moving from a "Public S3 Bucket" (HTTP, insecure, direct access) to a **CloudFront Content Delivery Network (CDN)** (HTTPS, secure, cached globally).
+
+This aligns with the **Security** (Encryption in transit) and **Performance Efficiency** (Global caching) pillars.
+
+---
+
+### 1. The "Why" & Service Selection
+
+**Architectural Decision:**
+We will place **CloudFront** in front of S3 and **lock down the bucket**.
+
+* **HTTPS Support:** S3 website endpoints only support HTTP. CloudFront gives you a free SSL certificate for HTTPS.
+* **Security (OAC):** We will use **Origin Access Control (OAC)**. This allows us to make the S3 bucket *completely private*. Only CloudFront can read the files.
+* **Edge Caching:** Users in London or Tokyo will load your site from a server near them, not from your bucket in `us-east-1`.
+
+---
+
+### 2. Step-by-Step Implementation
+
+This is a significant change to `main.tf`. We are adding the CDN and changing the S3 permissions to be restrictive.
+
+**Note:** CloudFront distributions take about **5-10 minutes** to deploy.
+
+#### **Step A: Modify `main.tf**`
+
+You need to **replace** the entire "S3 Static Website" section (Section 7 in your previous code) and add the CloudFront resources.
+
+Copy and paste the code below into your `main.tf`.
+
+1. **Find:** The S3 section (starting around `resource "aws_s3_bucket" "frontend_bucket"`).
+2. **Replace** it and everything below it (including the `website_url` output) with this:
+
+```hcl
+# --- 7. S3 Bucket (Now Private) ---
+resource "aws_s3_bucket" "frontend_bucket" {
+  bucket_prefix = "serverless-frontend-"
+  force_destroy = true
+}
+
+# We keep this for index document resolution, but access goes through OAC
+resource "aws_s3_bucket_website_configuration" "frontend_config" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+  index_document { suffix = "index.html" }
+}
+
+# BLOCK ALL PUBLIC ACCESS (Security Upgrade)
+resource "aws_s3_bucket_public_access_block" "public_access" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# --- 8. CloudFront Distribution ---
+
+# Create Origin Access Control (The Key)
+resource "aws_cloudfront_origin_access_control" "oac" {
+  name                              = "s3-oac"
+  description                       = "Grant CloudFront access to S3"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
+resource "aws_cloudfront_distribution" "s3_distribution" {
+  origin {
+    domain_name              = aws_s3_bucket.frontend_bucket.bucket_regional_domain_name
+    origin_id                = "S3Origin"
+    origin_access_control_id = aws_cloudfront_origin_access_control.oac.id
+  }
+
+  enabled             = true
+  is_ipv6_enabled     = true
+  default_root_object = "index.html"
+
+  default_cache_behavior {
+    allowed_methods  = ["GET", "HEAD"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "S3Origin"
+
+    forwarded_values {
+      query_string = false
+      cookies { forward = "none" }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 3600
+    max_ttl                = 86400
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+}
+
+# --- 9. Bucket Policy (Allow ONLY CloudFront) ---
+resource "aws_s3_bucket_policy" "allow_cloudfront" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Principal = { Service = "cloudfront.amazonaws.com" },
+      Action = "s3:GetObject",
+      Resource = "${aws_s3_bucket.frontend_bucket.arn}/*",
+      Condition = {
+        StringEquals = {
+          "AWS:SourceArn" = aws_cloudfront_distribution.s3_distribution.arn
+        }
+      }
+    }]
+  })
+}
+
+# --- Updated Outputs ---
+output "api_url" { 
+  value = "${aws_api_gateway_stage.prod_stage.invoke_url}/order" 
+}
+
+output "cloudfront_url" { 
+  value = "https://${aws_cloudfront_distribution.s3_distribution.domain_name}" 
+}
+
+```
+
+#### **Step B: Apply the Changes**
+
+1. Run the apply command:
+```bash
+terraform apply -auto-approve
+
+```
+
+
+2. **Wait:** The CLI will pause on `aws_cloudfront_distribution.s3_distribution: Creating...`. This is normal. It will take 5 to 10 minutes.
+
+---
+
+### 3. Verification & "Production" Test
+
+Once Terraform finishes, you will see a new output: `cloudfront_url`.
+
+1. **Update Frontend Code:**
+* Since your bucket is effectively new (permissions changed), re-upload your `index.html`.
+* (The API URL inside `index.html` remains the same, so no code changes needed, just re-upload).
+
+
+```bash
+aws s3 cp index.html s3://YOUR_BUCKET_NAME/
+
+```
+
+
+* *Tip: Use `terraform output` to find the generated bucket name if you forgot it.*
+
+
+2. **Access via CloudFront:**
+* Click the `cloudfront_url` (e.g., `https://d12345.cloudfront.net`).
+* You should see your Order System.
+* Notice the **Lock Icon** in the browser address bar. You are now secure!
+
+
+3. **Verify S3 is Private:**
+* Try to access the S3 bucket URL directly (the one you used before).
+* You should get a `403 Forbidden` error. This confirms users **cannot** bypass the CDN.
+
+
+
+---
+
+### 4. Reference
+
+* [Terraform CloudFront Resource](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudfront_distribution)
+* [Restricting Access to S3 using OAC](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html)
+
+**What Next?**
+You have built a fully secure, scalable, serverless application.
+
+* **Infrastructure:** Terraform managed.
+* **Compute:** Lambda (Serverless).
+* **Database:** DynamoDB (NoSQL).
+* **Async:** SQS + DLQ (Resilience).
+* **Frontend:** S3 + CloudFront (HTTPS/CDN).
+
+Would you like to perform a **"Tear Down"** to ensure you don't incur future costs, or would you like to attempt a **new scenario**, perhaps involving **Big Data processing with AWS Glue or Athena**?

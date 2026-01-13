@@ -15,9 +15,21 @@ resource "aws_dynamodb_table" "orders_table" {
 }
 
 # --- 2. SQS Queue ---
+
+# --- The Dead Letter Queue ---
+resource "aws_sqs_queue" "order_dlq" {
+  name = "order-processing-dlq"
+}
 resource "aws_sqs_queue" "order_queue" {
   name = "order-processing-queue"
+
+  # This policy tells SQS: "If this fails 3 times, move it to the DLQ"
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.order_dlq.arn
+    maxReceiveCount     = 3
+  })
 }
+
 
 # --- 3. IAM Roles & Policies ---
 # Role for Producer Lambda
@@ -138,6 +150,59 @@ resource "aws_lambda_permission" "apigw" {
   source_arn    = "${aws_api_gateway_rest_api.order_api.execution_arn}/*/*"
 }
 
+# --- CORS / OPTIONS Method Support ---
+
+# 1. Allow the OPTIONS method
+resource "aws_api_gateway_method" "options" {
+  rest_api_id   = aws_api_gateway_rest_api.order_api.id
+  resource_id   = aws_api_gateway_resource.order_resource.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# 2. Mock Integration (Don't call Lambda, just answer from Gateway)
+resource "aws_api_gateway_integration" "options" {
+  rest_api_id = aws_api_gateway_rest_api.order_api.id
+  resource_id = aws_api_gateway_resource.order_resource.id
+  http_method = aws_api_gateway_method.options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# 3. Define the Response (200 OK)
+resource "aws_api_gateway_method_response" "options_200" {
+  rest_api_id = aws_api_gateway_rest_api.order_api.id
+  resource_id = aws_api_gateway_resource.order_resource.id
+  http_method = aws_api_gateway_method.options.http_method
+  status_code = "200"
+
+  response_models = {
+    "application/json" = "Empty"
+  }
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true,
+    "method.response.header.Access-Control-Allow-Methods" = true,
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# 4. Fill the Headers (The actual permission)
+resource "aws_api_gateway_integration_response" "options_integration_response" {
+  rest_api_id = aws_api_gateway_rest_api.order_api.id
+  resource_id = aws_api_gateway_resource.order_resource.id
+  http_method = aws_api_gateway_method.options.http_method
+  status_code = aws_api_gateway_method_response.options_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS,POST,PUT'",
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
 # 1. The Deployment (Snapshot of the API)
 resource "aws_api_gateway_deployment" "api_deployment" {
   depends_on  = [aws_api_gateway_integration.lambda_integration]
@@ -149,6 +214,7 @@ resource "aws_api_gateway_deployment" "api_deployment" {
       aws_api_gateway_resource.order_resource.id,
       aws_api_gateway_method.post_method.id,
       aws_api_gateway_integration.lambda_integration.id,
+      aws_api_gateway_integration.options.id
     ]))
   }
 
