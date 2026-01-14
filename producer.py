@@ -1,34 +1,45 @@
 import json
 import boto3
 import os
+import datetime
 
-sqs = boto3.client("sqs")
-QUEUE_URL = os.environ["SQS_QUEUE_URL"]
+# Change Client to EventBridge
+events = boto3.client("events")
+EVENT_BUS_NAME = os.environ["EVENT_BUS_NAME"]
 
 
 def lambda_handler(event, context):
     try:
-        # 1. Parse incoming body from API Gateway
         body = json.loads(event["body"])
 
-        # 2. Send message to SQS
-        sqs.send_message(QueueUrl=QUEUE_URL, MessageBody=json.dumps(body))
+        # Validation checks
+        if not body.get("product"):
+            raise ValueError("Product is required")
+
+        # Create the EventBridge Entry
+        entry = {
+            "Source": "com.mycompany.orderapp",
+            "DetailType": "OrderPlaced",
+            "Detail": json.dumps(body),
+            "EventBusName": EVENT_BUS_NAME,
+            "Time": datetime.datetime.now(),
+        }
+
+        # Send to EventBridge
+        events.put_events(Entries=[entry])
 
         return {
             "statusCode": 200,
-            # --- CORS HEADERS START ---
             "headers": {
-                "Access-Control-Allow-Origin": "*",  # Allows any domain to read the response
+                "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Headers": "Content-Type",
                 "Access-Control-Allow-Methods": "OPTIONS,POST,GET",
             },
-            # --- CORS HEADERS END ---
-            "body": json.dumps("Order placed successfully!"),
+            "body": json.dumps("Order received and routed!"),
         }
     except Exception as e:
         return {
             "statusCode": 500,
-            # Add headers here too in case of error!
             "headers": {
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Headers": "Content-Type",
