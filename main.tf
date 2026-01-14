@@ -13,25 +13,69 @@ resource "aws_dynamodb_table" "orders_table" {
   }
 }
 
-# --- 2. SQS Queue ---
-
-# --- The Dead Letter Queue ---
+# --- 2. SQS Queues (Main + DLQ) ---
 resource "aws_sqs_queue" "order_dlq" {
   name = "order-processing-dlq"
 }
+
 resource "aws_sqs_queue" "order_queue" {
   name = "order-processing-queue"
-
-  # This policy tells SQS: "If this fails 3 times, move it to the DLQ"
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.order_dlq.arn
     maxReceiveCount     = 3
   })
 }
 
+# --- 3. EventBridge & SNS ( The New Hub ) ---
+resource "aws_cloudwatch_event_bus" "order_bus" {
+  name = "order-system-bus"
+}
 
-# --- 3. IAM Roles & Policies ---
-# Role for Producer Lambda
+resource "aws_sns_topic" "vip_orders" {
+  name = "vip-orders-topic"
+}
+
+# --- Email Subscription ---
+resource "aws_sns_topic_subscription" "email_sub" {
+  topic_arn = aws_sns_topic.vip_orders.arn
+  protocol  = "email"
+
+  # 👇 ENTER YOUR REAL EMAIL ADDRESS BELOW 👇
+  endpoint = "python831547@gmail.com"
+}
+
+# Rule 1: Catch-All (To SQS)
+resource "aws_cloudwatch_event_rule" "all_orders" {
+  name           = "capture-all-orders"
+  event_bus_name = aws_cloudwatch_event_bus.order_bus.name
+  event_pattern  = jsonencode({ source = ["com.mycompany.orderapp"] })
+}
+
+resource "aws_cloudwatch_event_target" "sqs_target" {
+  rule           = aws_cloudwatch_event_rule.all_orders.name
+  event_bus_name = aws_cloudwatch_event_bus.order_bus.name
+  arn            = aws_sqs_queue.order_queue.arn
+}
+
+# Rule 2: VIP Orders (To SNS)
+resource "aws_cloudwatch_event_rule" "vip_rule" {
+  name           = "capture-vip-orders"
+  event_bus_name = aws_cloudwatch_event_bus.order_bus.name
+  event_pattern = jsonencode({
+    source = ["com.mycompany.orderapp"],
+    detail = { quantity = [{ numeric = [">=", 5] }] }
+  })
+}
+
+resource "aws_cloudwatch_event_target" "sns_target" {
+  rule           = aws_cloudwatch_event_rule.vip_rule.name
+  event_bus_name = aws_cloudwatch_event_bus.order_bus.name
+  arn            = aws_sns_topic.vip_orders.arn
+}
+
+# --- 4. IAM Roles & Policies ---
+
+# PRODUCER ROLE
 resource "aws_iam_role" "producer_role" {
   name = "producer_lambda_role"
   assume_role_policy = jsonencode({
@@ -207,60 +251,6 @@ resource "aws_lambda_permission" "apigw" {
   source_arn    = "${aws_api_gateway_rest_api.order_api.execution_arn}/*/*"
 }
 
-# --- CORS / OPTIONS Method Support ---
-
-# 1. Allow the OPTIONS method
-resource "aws_api_gateway_method" "options" {
-  rest_api_id   = aws_api_gateway_rest_api.order_api.id
-  resource_id   = aws_api_gateway_resource.order_resource.id
-  http_method   = "OPTIONS"
-  authorization = "NONE"
-}
-
-# 2. Mock Integration (Don't call Lambda, just answer from Gateway)
-resource "aws_api_gateway_integration" "options" {
-  rest_api_id = aws_api_gateway_rest_api.order_api.id
-  resource_id = aws_api_gateway_resource.order_resource.id
-  http_method = aws_api_gateway_method.options.http_method
-  type        = "MOCK"
-  request_templates = {
-    "application/json" = "{\"statusCode\": 200}"
-  }
-}
-
-# 3. Define the Response (200 OK)---------
-resource "aws_api_gateway_method_response" "options_200" {
-  rest_api_id = aws_api_gateway_rest_api.order_api.id
-  resource_id = aws_api_gateway_resource.order_resource.id
-  http_method = aws_api_gateway_method.options.http_method
-  status_code = "200"
-
-  response_models = {
-    "application/json" = "Empty"
-  }
-
-  response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = true,
-    "method.response.header.Access-Control-Allow-Methods" = true,
-    "method.response.header.Access-Control-Allow-Origin"  = true
-  }
-}
-
-# 4. Fill the Headers (The actual permission)
-resource "aws_api_gateway_integration_response" "options_integration_response" {
-  rest_api_id = aws_api_gateway_rest_api.order_api.id
-  resource_id = aws_api_gateway_resource.order_resource.id
-  http_method = aws_api_gateway_method.options.http_method
-  status_code = aws_api_gateway_method_response.options_200.status_code
-
-  response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
-    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS,POST,PUT'",
-    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
-  }
-}
-
-# 1. The Deployment (Snapshot of the API)
 resource "aws_api_gateway_deployment" "api_deployment" {
   depends_on  = [aws_api_gateway_integration.lambda_integration, aws_api_gateway_integration.options]
   rest_api_id = aws_api_gateway_rest_api.order_api.id
@@ -270,7 +260,7 @@ resource "aws_api_gateway_deployment" "api_deployment" {
       aws_api_gateway_resource.order_resource.id,
       aws_api_gateway_method.post_method.id,
       aws_api_gateway_integration.lambda_integration.id,
-      aws_api_gateway_integration.options.id
+      aws_api_gateway_integration.options.id # Ensure trigger monitors CORS changes
     ]))
   }
   lifecycle { create_before_destroy = true }
@@ -310,7 +300,6 @@ resource "aws_s3_bucket_policy" "public_read" {
   })
 }
 
-# --- Outputs --- ------------
-
+# --- Outputs ---
 output "api_url" { value = "${aws_api_gateway_stage.prod_stage.invoke_url}/order" }
 output "website_url" { value = aws_s3_bucket_website_configuration.frontend_config.website_endpoint }
