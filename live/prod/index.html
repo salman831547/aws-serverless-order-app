@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Serverless Order System</title>
+    <style>
+        :root { --primary: #007bff; --bg: #f4f7f6; --text: #333; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+        h2 { text-align: center; margin-bottom: 1.5rem; }
+        input, button { width: 100%; padding: 10px; margin-bottom: 1rem; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { background: var(--primary); color: white; border: none; font-weight: bold; cursor: pointer; transition: background 0.3s; }
+        button:hover { background: #0056b3; }
+        button.secondary { background: #6c757d; }
+        button:disabled { opacity: 0.7; cursor: not-allowed; }
+        .alert { padding: 10px; border-radius: 4px; margin-bottom: 1rem; text-align: center; font-size: 0.9rem; display: none; }
+        .alert.error { background: #f8d7da; color: #721c24; }
+        .alert.success { background: #d4edda; color: #155724; }
+        .hidden { display: none; }
+        .loader { border: 3px solid #f3f3f3; border-top: 3px solid var(--primary); border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; margin: 0 auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/amazon-cognito-identity-js/6.3.1/aws-cognito-sdk.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/amazon-cognito-identity-js/6.3.1/amazon-cognito-identity.min.js"></script>
+</head>
+<body>
+
+<div class="container">
+    <h2>Serverless Shop</h2>
+
+    <div id="alertBox" class="alert"></div>
+
+    <div id="authSection">
+        <input type="text" id="email" placeholder="Email" required>
+        <input type="password" id="password" placeholder="Password" required>
+        <button id="loginBtn" onclick="handleLogin()">Log In</button>
+        <p style="text-align: center; font-size: 0.8rem; color: #666;">(Note: Please create a user in the AWS Cognito Console first)</p>
+    </div>
+
+    <div id="orderSection" class="hidden">
+        <p>Welcome, <span id="userEmail"></span>! <a href="#" onclick="handleLogout()" style="font-size: 0.8rem;">Logout</a></p>
+        <hr>
+        <h3>Place Order</h3>
+        <input type="text" id="itemName" placeholder="Item Name (e.g., Laptop)" required>
+        <input type="number" id="quantity" placeholder="Quantity (try >= 5 for VIP)" min="1" value="1" required>
+        <button id="submitBtn" onclick="submitOrder()">
+            <span id="btnText">Submit Order</span>
+            <div id="btnLoader" class="loader hidden"></div>
+        </button>
+    </div>
+</div>
+
+<script>
+    // ==========================================
+    // 1. CONFIGURATION (UPDATE THESE VALUES FROM TERRAFORM OUTPUT)
+    // ==========================================
+    const cognitoConfig = {
+        // Example: us-east-1_xxxxxxxxx
+        UserPoolId: 'us-east-1_kuEW7GDnf', 
+        // Example: 4xxxxxxxxxxxxxxxxx
+        ClientId: '32ljkj2h0ca39l4mg5j5kgge1j', 
+    };
+    // Example: https://xxxxxxx.execute-api.us-east-1.amazonaws.com/orders
+    const API_URL = 'https://w8pn6pelbg.execute-api.us-east-1.amazonaws.com/orders'; 
+    // ==========================================
+
+
+    // --- Cognito Setup ---
+    const userPool = new AmazonCognitoIdentity.CognitoUserPool(cognitoConfig);
+    let currentUser = userPool.getCurrentUser();
+
+    // --- UI Elements ---
+    const authSection = document.getElementById('authSection');
+    const orderSection = document.getElementById('orderSection');
+    const alertBox = document.getElementById('alertBox');
+    const loginBtn = document.getElementById('loginBtn');
+    const submitBtn = document.getElementById('submitBtn');
+    const btnText = document.getElementById('btnText');
+    const btnLoader = document.getElementById('btnLoader');
+
+    // --- Helper Functions ---
+    function showAlert(message, type = 'error') {
+        alertBox.textContent = message;
+        alertBox.className = `alert ${type}`;
+        alertBox.style.display = 'block';
+        setTimeout(() => { alertBox.style.display = 'none'; }, 5000);
+    }
+
+    function setLoading(isLoading, button) {
+        button.disabled = isLoading;
+        btnText.classList.toggle('hidden', isLoading);
+        btnLoader.classList.toggle('hidden', !isLoading);
+        if (button === loginBtn) loginBtn.innerText = isLoading ? 'Logging in...' : 'Log In';
+    }
+
+    function toggleUIState() {
+        currentUser = userPool.getCurrentUser();
+        if (currentUser) {
+            // If session exists, get details to confirm validity
+            currentUser.getSession((err, session) => {
+                if (err || !session.isValid()) {
+                    authSection.classList.remove('hidden');
+                    orderSection.classList.add('hidden');
+                } else {
+                    document.getElementById('userEmail').textContent = session.getIdToken().payload.email;
+                    authSection.classList.add('hidden');
+                    orderSection.classList.remove('hidden');
+                }
+            });
+        } else {
+            authSection.classList.remove('hidden');
+            orderSection.classList.add('hidden');
+        }
+    }
+
+    // --- Auth Logic ---
+    function handleLogin() {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+
+        if (!email || !password) { showAlert('Please enter email and password.'); return; }
+
+        setLoading(true, loginBtn);
+
+        const authDetails = new AmazonCognitoIdentity.AuthenticationDetails({ Username: email, Password: password });
+        const userData = { Username: email, Pool: userPool };
+        const cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+
+        cognitoUser.authenticateUser(authDetails, {
+            onSuccess: (result) => {
+                setLoading(false, loginBtn);
+                showAlert('Login successful!', 'success');
+                toggleUIState();
+            },
+            onFailure: (err) => {
+                setLoading(false, loginBtn);
+                showAlert(err.message || JSON.stringify(err));
+            },
+        });
+    }
+
+    function handleLogout() {
+        if (currentUser) currentUser.signOut();
+        toggleUIState();
+        showAlert('Logged out successfully.', 'success');
+    }
+
+    // --- Order Submission Logic (The Smart Part) ---
+    function submitOrder() {
+        const item = document.getElementById('itemName').value;
+        const quantity = parseInt(document.getElementById('quantity').value);
+
+        if (!item || quantity < 1) { showAlert('Please enter valid item and quantity.'); return; }
+
+        setLoading(true, submitBtn);
+
+        // 1. Get Current Session securely
+        currentUser.getSession((err, session) => {
+            if (err) {
+                setLoading(false, submitBtn);
+                showAlert('Session expired. Please log in again.');
+                handleLogout();
+                return;
+            }
+
+            // 2. Extract JWT ID Token
+            const idToken = session.getIdToken().getJwtToken();
+            const orderId = 'ord-' + Math.random().toString(36).substr(2, 9);
+
+            const payload = { order_id: orderId, item: item, quantity: quantity };
+
+            // 3. Make Authenticated API Call
+            fetch(API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    // THIS IS KEY: Send token to API Gateway Authorizer
+                    'Authorization': idToken 
+                },
+                body: JSON.stringify(payload),
+            })
+            .then(response => {
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                return response.json();
+            })
+            .then(data => {
+                showAlert(`Order Submitted! ID: ${data.id}. ${quantity >= 5 ? "(VIP Order!)" : ""}`, 'success');
+                document.getElementById('itemName').value = '';
+                document.getElementById('quantity').value = '1';
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showAlert('Failed to submit order. See console for details.');
+            })
+            .finally(() => {
+                setLoading(false, submitBtn);
+            });
+        });
+    }
+
+    // Check login state on page load
+    toggleUIState();
+
+</script>
+</body>
+</html>

@@ -338,8 +338,19 @@ Lambda "Redriver": A specific Lambda function that triggers off the DLQ, sanitiz
 
 
 
+api_gateway_url = "https://w8pn6pelbg.execute-api.us-east-1.amazonaws.com/orders"
+cognito_user_pool_id = "us-east-1_kuEW7GDnf"
+s3_bucket_name_to_upload_html = "serverless-shop-prod-frontend-20260114052456862600000001"
+website_url = "https://d17maoi01ttq9r.cloudfront.net"
 
-api_url = "https://rplpsmjlf5.execute-api.us-east-1.amazonaws.com/prod/order"
-website_url = "serverless-frontend-20260113093148018800000001.s3-website-us-east-1.amazonaws.com"
-
-Next Step: You have a solid, resilient backend. Would you like to secure the frontend by putting CloudFront (CDN) in front of your S3 bucket (which enables HTTPS and caching), or would you prefer to explore Log Monitoring to set up an alarm when items hit the DLQ?
+aws cognito-idp admin-create-user \
+    --user-pool-id YOUR_POOL_ID \
+    --username python831547@gmail.com \
+    --user-attributes Name=email,Value=python831547@gmail.com,Name=email_verified,Value=true \
+    --message-action SUPPRESS
+    
+aws cognito-idp admin-set-user-password \
+    --user-pool-id us-east-1_kuEW7GDnf \
+    --username python831547@gmail.com \
+    --password "Password123!" \
+    --permanent
